@@ -1,159 +1,185 @@
 import streamlit as st
 import math
+import statistics
 
-# 页面配置
-st.set_page_config(page_title="声速不确定度计算器", layout="centered")
-st.title("🔊 超声波声速不确定度计算工具")
-st.markdown("支持驻波法、相位比较法、时差法、直接输入波长")
+# ---------- 理论声速 ----------
+def theoretical_speed(T):
+    return 331.45 + 0.607 * T
 
-# 用户输入频率和温度
-col_freq, col_temp = st.columns(2)
-with col_freq:
-    frequency = st.number_input("频率 (Hz)", value=34000.0, step=100.0, format="%.1f")
-with col_temp:
-    temperature = st.number_input("温度 (°C)", value=25.0, step=0.5, format="%.1f")
+# ---------- 驻波法 ----------
+def standing_wave_calc(f, T, positions):
+    if len(positions) != 10:
+        return None, "需要输入恰好 10 个位置数据。"
+    pos_m = [p / 1000.0 for p in positions]
+    diffs = [pos_m[i+1] - pos_m[i] for i in range(9)]
+    avg_diff = sum(diffs) / 9
+    std_diff = statistics.stdev(diffs) if 9 > 1 else 0.0
+    u_avg_diff = std_diff / math.sqrt(9)
+    wavelength = 2 * avg_diff
+    u_wavelength = 2 * u_avg_diff
+    v = f * wavelength
+    u_v = f * u_wavelength
+    v0 = theoretical_speed(T)
+    rel_error = abs(v - v0) / v0 * 100
+    rel_unc = u_v / v * 100 if v != 0 else 0
+    return {
+        "diffs_mm": [round(d*1000, 4) for d in diffs],
+        "avg_diff_mm": avg_diff * 1000,
+        "wavelength_mm": wavelength * 1000,
+        "v": v,
+        "v0": v0,
+        "rel_error": rel_error,
+        "u_v": u_v,
+        "rel_unc": rel_unc
+    }, None
 
-# 方法选择
-method = st.selectbox(
-    "选择测量方法",
-    ["驻波法", "相位比较法", "时差法", "直接输入平均波长"]
-)
+# ---------- 相位比较法 ----------
+def phase_comparison_calc(f, T, positions):
+    if len(positions) != 10:
+        return None, "需要输入恰好 10 个位置数据。"
+    pos_m = [p / 1000.0 for p in positions]
+    diffs = [pos_m[i+1] - pos_m[i] for i in range(9)]
+    avg_wavelength = sum(diffs) / 9
+    std_wavelength = statistics.stdev(diffs) if 9 > 1 else 0.0
+    u_avg_wavelength = std_wavelength / math.sqrt(9)
+    v = f * avg_wavelength
+    u_v = f * u_avg_wavelength
+    v0 = theoretical_speed(T)
+    rel_error = abs(v - v0) / v0 * 100
+    rel_unc = u_v / v * 100 if v != 0 else 0
+    return {
+        "diffs_mm": [round(d*1000, 4) for d in diffs],
+        "avg_wavelength_mm": avg_wavelength * 1000,
+        "v": v,
+        "v0": v0,
+        "rel_error": rel_error,
+        "u_v": u_v,
+        "rel_unc": rel_unc
+    }, None
 
-wavelength = None  # 最终用于计算的波长（m）
+# ---------- 时差法（自动计算相邻差值） ----------
+def time_difference_calc(T, dists, times):
+    if len(dists) != 10 or len(times) != 10:
+        return None, "需要输入恰好 10 个距离和 10 个时间。"
+    dist_diffs = [dists[i+1] - dists[i] for i in range(9)]
+    time_diffs = [times[i+1] - times[i] for i in range(9)]
+    speeds = []
+    for dd, dt in zip(dist_diffs, time_diffs):
+        if dt == 0:
+            continue
+        d_m = dd / 1000.0
+        t_s = dt / 1_000_000.0
+        speeds.append(d_m / t_s)
+    if len(speeds) != 9:
+        return None, "有效速度不足 9 组，请检查时间差是否为 0。"
+    avg_v = sum(speeds) / 9
+    std_v = statistics.stdev(speeds) if 9 > 1 else 0.0
+    u_avg_v = std_v / math.sqrt(9)
+    v0 = theoretical_speed(T)
+    rel_error = abs(avg_v - v0) / v0 * 100
+    rel_unc = u_avg_v / avg_v * 100 if avg_v != 0 else 0
+    return {
+        "dist_diffs_mm": [round(dd, 3) for dd in dist_diffs],
+        "time_diffs_us": [round(dt, 2) for dt in time_diffs],
+        "speeds": [round(v, 2) for v in speeds],
+        "avg_v": avg_v,
+        "v0": v0,
+        "rel_error": rel_error,
+        "u_v": u_avg_v,
+        "rel_unc": rel_unc
+    }, None
 
-# ------------------ 驻波法 ------------------
+# ---------- Streamlit 界面 ----------
+st.set_page_config(page_title="超声波声速测量平台", layout="centered")
+st.title("🔊 超声波声速测量计算平台")
+st.markdown("支持 **驻波法**、**相位比较法** 和 **时差法**。所有距离/波长单位均为 **mm**，时差法时间单位为 **μs**。")
+
+method = st.selectbox("选择测量方法", ["驻波法", "相位比较法", "时差法"])
+
 if method == "驻波法":
-    st.markdown("**驻波法公式**：$\\lambda = 2 \\times \\frac{\\sum_{i=0}^{4}(X_{i+6}-X_{i+1})}{25}$")
-    st.markdown("请输入 **10个相邻极大值的位置**（单位：cm），用空格分隔，例如：`0.0 2.0 4.0 ...`")
-    pos_input = st.text_area("位置数据（cm）", value="0.0 2.0 4.0 6.0 8.0 10.0 12.0 14.0 16.0 18.0")
-    if st.button("计算波长（驻波法）"):
-        try:
-            positions_cm = [float(x) for x in pos_input.split()]
-            if len(positions_cm) != 10:
-                st.error("❌ 必须输入恰好10个数据！")
-            else:
-                positions_cm.sort()
-                positions = [x / 100 for x in positions_cm]  # cm → m
-                sum_diff = 0
-                with st.expander("查看逐项计算过程"):
-                    for i in range(5):
-                        diff = positions[i+5] - positions[i]
-                        sum_diff += diff
-                        st.write(f"X{i+6} - X{i+1} = {positions_cm[i+5]:.2f}cm - {positions_cm[i]:.2f}cm = {diff*100:.2f}cm")
-                wavelength = 2 * sum_diff / 25
-                st.success(f"✅ 平均波长 λ = **{wavelength*100:.4f} cm**（即 **{wavelength:.6f} m**）")
-                st.session_state['wavelength'] = wavelength
-        except Exception as e:
-            st.error(f"输入解析错误：{e}")
-
-# ------------------ 相位比较法 ------------------
-elif method == "相位比较法":
-    st.markdown("**相位比较法公式**：$\\lambda = \\frac{\\sum_{i=0}^{4}(X_{i+6}-X_{i+1})}{25}$")
-    st.markdown("请输入 **10个同相位点的位置**（单位：cm），用空格分隔，例如：`0.0 1.0 2.0 ...`")
-    pos_input = st.text_area("位置数据（cm）", value="0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0")
-    if st.button("计算波长（相位法）"):
-        try:
-            positions_cm = [float(x) for x in pos_input.split()]
-            if len(positions_cm) != 10:
-                st.error("❌ 必须输入恰好10个数据！")
-            else:
-                positions_cm.sort()
-                positions = [x / 100 for x in positions_cm]
-                sum_diff = 0
-                with st.expander("查看逐项计算过程"):
-                    for i in range(5):
-                        diff = positions[i+5] - positions[i]
-                        sum_diff += diff
-                        st.write(f"X{i+6} - X{i+1} = {positions_cm[i+5]:.2f}cm - {positions_cm[i]:.2f}cm = {diff*100:.2f}cm")
-                wavelength = sum_diff / 25
-                st.success(f"✅ 平均波长 λ = **{wavelength*100:.4f} cm**（即 **{wavelength:.6f} m**）")
-                st.session_state['wavelength'] = wavelength
-        except Exception as e:
-            st.error(f"输入解析错误：{e}")
-
-# ------------------ 时差法 ------------------
-elif method == "时差法":
-    st.markdown("**时差法公式**：$v = \\frac{1}{5} \\sum_{i=0}^{4} \\frac{X_{i+6}-X_{i+1}}{t_{i+6}-t_{i+1}}$，$\\lambda = v/f$")
-    st.markdown("请输入 **10个位置**（单位：cm）和对应的 **10个时间**（单位：s），用空格分隔。建议每隔2cm记录。")
-    col_pos, col_time = st.columns(2)
-    with col_pos:
-        pos_input = st.text_area("位置（cm）", value="0.0 2.0 4.0 6.0 8.0 10.0 12.0 14.0 16.0 18.0")
-    with col_time:
-        time_input = st.text_area("时间（s）", value="0.000000 0.0000588 0.0001176 0.0001764 0.0002352 0.0002940 0.0003528 0.0004116 0.0004704 0.0005292")
-    if st.button("计算波长（时差法）"):
-        try:
-            positions_cm = [float(x) for x in pos_input.split()]
-            times = [float(x) for x in time_input.split()]
-            if len(positions_cm) != 10 or len(times) != 10:
-                st.error("❌ 位置和时间必须各为10个数据！")
-            else:
-                # 按位置排序
-                pairs = sorted(zip(positions_cm, times))
-                positions_cm = [p[0] for p in pairs]
-                times = [p[1] for p in pairs]
-                positions = [x / 100 for x in positions_cm]
-                v_sum = 0
-                with st.expander("查看逐项计算过程"):
-                    for i in range(5):
-                        dx = positions[i+5] - positions[i]
-                        dt = times[i+5] - times[i]
-                        if dt == 0:
-                            st.error("时间差为零，无法计算")
-                            st.stop()
-                        vi = dx / dt
-                        v_sum += vi
-                        st.write(f"v{i+1} = ({positions_cm[i+5]:.2f}cm - {positions_cm[i]:.2f}cm) / ({times[i+5]:.6f}s - {times[i]:.6f}s) = {vi:.2f} m/s")
-                v_sound = v_sum / 5
-                wavelength = v_sound / frequency
-                st.success(f"✅ 平均速度 v = **{v_sound:.2f} m/s**")
-                st.success(f"✅ 平均波长 λ = **{wavelength*100:.4f} cm**（即 **{wavelength:.6f} m**）")
-                st.session_state['wavelength'] = wavelength
-        except Exception as e:
-            st.error(f"输入解析错误：{e}")
-
-# ------------------ 直接输入 ------------------
-else:
-    st.markdown("直接输入已知的平均波长（单位：m）")
-    wavelength = st.number_input("平均波长 (m)", value=0.01, step=0.001, format="%.6f")
-    if st.button("确认波长"):
-        st.session_state['wavelength'] = wavelength
-        st.success(f"已设置波长 = {wavelength:.6f} m")
-
-# ------------------ 公用计算结果 ------------------
-if 'wavelength' in st.session_state and st.session_state['wavelength'] is not None:
-    wavelength = st.session_state['wavelength']
-    # 计算声速
-    v = frequency * wavelength
-    v_theory = 331.45 + 0.59 * temperature   # 使用0.59系数
-
-    # 相对误差
-    relative_error = abs(v - v_theory) / v_theory * 100 if v_theory != 0 else float('inf')
-
-    # 仪器误差（B类不确定度）
-    delta_lambda = 0.001   # m
-    delta_f = 1.0          # Hz
-    delta_t = 0.5          # °C
-    u_lambda = delta_lambda / math.sqrt(3)
-    u_f = delta_f / math.sqrt(3)
-    u_t = delta_t / math.sqrt(3)
-
-    # 合成相对不确定度
-    rel_u = math.sqrt(
-        (u_lambda / wavelength) ** 2 +
-        (u_f / frequency) ** 2 +
-        (0.6 * u_t / v) ** 2
+    st.subheader("驻波法")
+    f = st.number_input("声源频率 (Hz)", value=37654.0, step=1.0)
+    T = st.number_input("环境温度 (°C)", value=27.0, step=0.1)
+    pos_input = st.text_area(
+        "输入 10 个极大值位置 (mm)，用空格或逗号分隔",
+        "732 774 826 868 920 970 1012 1054 1106 1150"
     )
-    u_v = v * rel_u
-    rel_percent = rel_u * 100
+    if st.button("计算"):
+        try:
+            positions = [float(x) for x in pos_input.replace(',', ' ').split() if x.strip()]
+            result, err = standing_wave_calc(f, T, positions)
+            if err:
+                st.error(err)
+            else:
+                st.success("计算完成")
+                st.write(f"**相邻间距 (mm):** {result['diffs_mm']}")
+                st.write(f"**平均间距:** {result['avg_diff_mm']:.4f} mm = {result['avg_diff_mm']/1000:.6f} m")
+                st.write(f"**波长:** {result['wavelength_mm']:.4f} mm = {result['wavelength_mm']/1000:.6f} m")
+                st.write(f"**实验声速:** {result['v']:.2f} m/s")
+                st.write(f"**理论声速 (T={T}°C):** {result['v0']:.2f} m/s")
+                st.write(f"**相对误差:** {result['rel_error']:.2f} %")
+                st.write(f"**合成标准不确定度 u(v):** {result['u_v']:.2f} m/s")
+                st.write(f"**相对不确定度:** {result['rel_unc']:.2f} %")
+        except Exception as e:
+            st.error(f"输入错误: {e}")
 
-    # 显示结果
-    st.divider()
-    st.subheader("📊 计算结果")
-    col1, col2 = st.columns(2)
-    col1.metric("计算声速", f"{v:.2f} m/s")
-    col2.metric("空气中理论声速", f"{v_theory:.2f} m/s")
-    st.metric("📌 相对误差 (测量 vs 理论)", f"{relative_error:.2f} %")
-    st.metric("合成标准不确定度", f"{u_v:.4f} m/s")
-    st.metric("相对不确定度", f"{rel_percent:.2f} %")
-    st.success(f"**最终结果**: v = **{v:.2f}** ± **{u_v:.4f}** m/s  (即 ± **{rel_percent:.2f}**%)")
-    
+elif method == "相位比较法":
+    st.subheader("相位比较法")
+    f = st.number_input("声源频率 (Hz)", value=37654.0, step=1.0)
+    T = st.number_input("环境温度 (°C)", value=27.0, step=0.1)
+    pos_input = st.text_area(
+        "输入 10 个同相点位置 (mm)，用空格或逗号分隔",
+        "60 69 78 87 96 105 114 123 132 141"
+    )
+    if st.button("计算"):
+        try:
+            positions = [float(x) for x in pos_input.replace(',', ' ').split() if x.strip()]
+            result, err = phase_comparison_calc(f, T, positions)
+            if err:
+                st.error(err)
+            else:
+                st.success("计算完成")
+                st.write(f"**相邻同相点间距（波长）(mm):** {result['diffs_mm']}")
+                st.write(f"**平均波长:** {result['avg_wavelength_mm']:.4f} mm = {result['avg_wavelength_mm']/1000:.6f} m")
+                st.write(f"**实验声速:** {result['v']:.2f} m/s")
+                st.write(f"**理论声速 (T={T}°C):** {result['v0']:.2f} m/s")
+                st.write(f"**相对误差:** {result['rel_error']:.2f} %")
+                st.write(f"**合成标准不确定度 u(v):** {result['u_v']:.2f} m/s")
+                st.write(f"**相对不确定度:** {result['rel_unc']:.2f} %")
+        except Exception as e:
+            st.error(f"输入错误: {e}")
+
+else:  # 时差法
+    st.subheader("时差法")
+    st.markdown("建议每隔 20 mm 记录一次位置和到达时间，共 10 组数据。程序将自动计算相邻差值并求各段声速。")
+    T = st.number_input("环境温度 (°C)", value=24.2, step=0.1)
+    dist_input = st.text_area(
+        "输入 10 个位置 (mm)，用空格或逗号分隔",
+        "60 70 80 90 100 110 120 130 140 150"
+    )
+    time_input = st.text_area(
+        "输入对应的 10 个时间 (μs)，用空格或逗号分隔",
+        "335 364 393 422 450 479 508 536 565 593"
+    )
+    if st.button("计算"):
+        try:
+            dists = [float(x) for x in dist_input.replace(',', ' ').split() if x.strip()]
+            times = [float(x) for x in time_input.replace(',', ' ').split() if x.strip()]
+            result, err = time_difference_calc(T, dists, times)
+            if err:
+                st.error(err)
+            else:
+                st.success("计算完成")
+                st.write(f"**距离差 (mm):** {result['dist_diffs_mm']}")
+                st.write(f"**时间差 (μs):** {result['time_diffs_us']}")
+                st.write(f"**各段声速 (m/s):** {result['speeds']}")
+                st.write(f"**平均声速:** {result['avg_v']:.2f} m/s")
+                st.write(f"**理论声速 (T={T}°C):** {result['v0']:.2f} m/s")
+                st.write(f"**相对误差:** {result['rel_error']:.2f} %")
+                st.write(f"**合成标准不确定度 u(v):** {result['u_v']:.2f} m/s")
+                st.write(f"**相对不确定度:** {result['rel_unc']:.2f} %")
+        except Exception as e:
+            st.error(f"输入错误: {e}")
+
+st.markdown("---")
+st.caption("所有计算基于 A 类不确定度评定（测量重复性）。理论声速采用 v = 331.45 + 0.607·T")
