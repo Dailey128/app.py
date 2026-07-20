@@ -11,7 +11,6 @@ def theoretical_speed(T):
 
 # ---------- 驻波法计算 ----------
 def calc_standing_wave(f, T, positions):
-    """返回驻波法结果字典"""
     pos_m = [p / 1000.0 for p in positions]
     diffs = [pos_m[i+1] - pos_m[i] for i in range(9)]
     avg_diff = sum(diffs) / 9
@@ -23,7 +22,6 @@ def calc_standing_wave(f, T, positions):
     u_v = f * u_wavelength
     v0 = theoretical_speed(T)
     rel_error = abs(v - v0) / v0 * 100
-
     return {
         'diffs_mm': [round(d*1000, 4) for d in diffs],
         'avg_diff_mm': avg_diff * 1000,
@@ -47,7 +45,6 @@ def calc_phase_method(f, T, positions):
     u_v = f * u_avg_wavelength
     v0 = theoretical_speed(T)
     rel_error = abs(v - v0) / v0 * 100
-
     return {
         'diffs_mm': [round(d*1000, 4) for d in diffs],
         'avg_wavelength_mm': avg_wavelength * 1000,
@@ -89,9 +86,9 @@ with st.form(key="input_form"):
     )
     submitted = st.form_submit_button("计算")
 
-# ---------- 决定使用哪组数据 ----------
+# ---------- 关键修改：只有点击计算按钮才执行计算和显示 ----------
 if submitted:
-    # 用户点击了“计算”，解析文本框内容
+    # 解析用户输入
     try:
         positions = [float(x.strip()) for x in positions_input.replace(',', ' ').split() if x.strip()]
         if len(positions) != 10:
@@ -100,36 +97,37 @@ if submitted:
     except Exception as e:
         st.error(f"输入错误: {e}")
         st.stop()
+
+    # 执行计算
+    if method == "驻波法（10个极大值位置）":
+        result = calc_standing_wave(f, T, positions)
+    else:
+        result = calc_phase_method(f, T, positions)
+
+    # ---------- 显示结果 ----------
+    st.subheader("计算结果")
+    col1, col2 = st.columns(2)
+
+    if method == "驻波法（10个极大值位置）":
+        with col1:
+            st.metric("平均间距", f"{result['avg_diff_mm']:.4f} mm")
+            st.metric("波长", f"{result['wavelength_mm']:.4f} mm")
+        with col2:
+            st.metric("实验声速", f"{result['v']:.2f} m/s")
+            st.metric("理论声速", f"{result['v0']:.2f} m/s")
+        st.write(f"**相邻间距 (mm):** {result['diffs_mm']}")
+    else:
+        with col1:
+            st.metric("平均波长", f"{result['avg_wavelength_mm']:.4f} mm")
+        with col2:
+            st.metric("实验声速", f"{result['v']:.2f} m/s")
+            st.metric("理论声速", f"{result['v0']:.2f} m/s")
+        st.write(f"**相邻同相点间距（波长） (mm):** {result['diffs_mm']}")
+
+    # 使用 st.metric 突出显示相对误差和不确定度
+    st.metric("相对误差", f"{result['rel_error']:.2f} %")
+    st.metric("合成标准不确定度 u(v)", f"{result['u_v']:.1f} m/s")
+
 else:
-    # 未点击按钮，直接使用默认数据（页面加载时自动显示示例结果）
-    positions = default_pos
-
-# ---------- 执行计算 ----------
-if method == "驻波法（10个极大值位置）":
-    result = calc_standing_wave(f, T, positions)
-else:
-    result = calc_phase_method(f, T, positions)
-
-# ---------- 显示结果 ----------
-st.subheader("计算结果")
-col1, col2 = st.columns(2)
-
-if method == "驻波法（10个极大值位置）":
-    with col1:
-        st.metric("平均间距", f"{result['avg_diff_mm']:.4f} mm")
-        st.metric("波长", f"{result['wavelength_mm']:.4f} mm")
-    with col2:
-        st.metric("实验声速", f"{result['v']:.2f} m/s")
-        st.metric("理论声速", f"{result['v0']:.2f} m/s")
-    st.write(f"**相邻间距 (mm):** {result['diffs_mm']}")
-else:
-    with col1:
-        st.metric("平均波长", f"{result['avg_wavelength_mm']:.4f} mm")
-    with col2:
-        st.metric("实验声速", f"{result['v']:.2f} m/s")
-        st.metric("理论声速", f"{result['v0']:.2f} m/s")
-    st.write(f"**相邻同相点间距（波长） (mm):** {result['diffs_mm']}")
-
-# 使用 st.metric 突出显示相对误差和不确定度（字号更大）
-st.metric("相对误差", f"{result['rel_error']:.2f} %")
-st.metric("合成标准不确定度 u(v)", f"{result['u_v']:.1f} m/s")
+    # 未点击按钮时，显示提示信息（不进行任何计算）
+    st.info("👆 请确认参数无误后，点击 **“计算”** 按钮查看结果。")
