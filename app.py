@@ -74,25 +74,7 @@ DEFAULT_PHASE = [123.82, 133.00, 142.24, 151.22, 160.82, 170.22, 179.40, 189.04,
 # ==================== 页面主体 ====================
 st.title("🔊 超声波声速测量计算平台")
 
-# ---------- 1. 直接显示公式（默认展开） ----------
-with st.expander("📐 计算公式（点击展开/收起）", expanded=True):
-    st.markdown("""
-    **1. 声速公式**
-    - 驻波法：$v = f \\cdot \\lambda$，其中 $\\lambda = 2 \\cdot \\overline{\\Delta x}$（半波长平均值）
-    - 相位比较法：$v = f \\cdot \\lambda$，其中 $\\lambda = \\overline{\\Delta x}$（相邻同相点间距平均值）
-
-    **2. 相对误差**
-    $$E = \\frac{|v - v_0|}{v_0} \\times 100\\%$$
-    $$v_0 = 331.45 + 0.607 \\cdot T \\quad \\text{(理论声速)}$$
-
-    **3. 合成标准不确定度**
-    $$u(v) = f \\cdot u(\\lambda), \\quad u(\\lambda) = \\frac{\\sigma(\\Delta x)}{\\sqrt{n}}$$
-    """)
-    st.caption("其中 $n = 9$ 为差值个数，$\\sigma(\\Delta x)$ 为相邻间距（或波长）的实验标准差。")
-
-st.divider()
-
-# ---------- 2. 方法选择与输入 ----------
+# ---------- 1. 方法选择 ----------
 method = st.radio(
     "请选择测量方法",
     ("驻波法（10个极大值位置）", "相位比较法（10个同相点位置）")
@@ -104,7 +86,7 @@ else:
     default_pos = DEFAULT_PHASE
 default_pos_str = ' '.join(map(str, default_pos))
 
-# 输入表单
+# ---------- 2. 输入表单（包含公式区域） ----------
 with st.form(key="input_form"):
     col_freq, col_temp = st.columns(2)
     with col_freq:
@@ -118,7 +100,24 @@ with st.form(key="input_form"):
         height=80,
         help="请输入10个位置数据"
     )
-    
+
+    # ---------- 公式区域（现在放在数据输入下方，按钮上方） ----------
+    with st.expander("📐 计算公式（点击展开/收起）", expanded=True):
+        st.markdown("""
+        **1. 声速公式**
+        - 驻波法：$v = f \\cdot \\lambda$，其中 $\\lambda = 2 \\cdot \\overline{\\Delta x}$（半波长平均值）
+        - 相位比较法：$v = f \\cdot \\lambda$，其中 $\\lambda = \\overline{\\Delta x}$（相邻同相点间距平均值）
+
+        **2. 相对误差**
+        $$E = \\frac{|v - v_0|}{v_0} \\times 100\\%$$
+        $$v_0 = 331.45 + 0.607 \\cdot T \\quad \\text{(理论声速)}$$
+
+        **3. 合成标准不确定度**
+        $$u(v) = f \\cdot u(\\lambda), \\quad u(\\lambda) = \\frac{\\sigma(\\Delta x)}{\\sqrt{n}}$$
+        """)
+        st.caption("其中 $n = 9$ 为差值个数，$\\sigma(\\Delta x)$ 为相邻间距（或波长）的实验标准差。")
+
+    # 提交按钮
     submitted = st.form_submit_button("🚀 计算")
 
 # ---------- 3. 处理计算（仅在点击按钮后） ----------
