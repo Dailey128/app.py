@@ -71,65 +71,65 @@ method = st.radio(
     ("驻波法（10个极大值位置）", "相位比较法（10个同相点位置）")
 )
 
-# 输入参数
+# 根据方法选择默认数据
+if method == "驻波法（10个极大值位置）":
+    default_pos = DEFAULT_STANDING
+else:
+    default_pos = DEFAULT_PHASE
+default_pos_str = ' '.join(map(str, default_pos))
+
+# 输入参数表单
 with st.form(key="input_form"):
     f = st.number_input("请输入声源频率 (Hz):", value=37654.0, format="%.2f")
     T = st.number_input("请输入环境温度 (°C):", value=27.0, format="%.2f")
-    
-    use_default = st.checkbox("使用默认示例数据")
-    
-    if use_default:
-        if method == "驻波法（10个极大值位置）":
-            default_pos = DEFAULT_STANDING
-            pos_str = ' '.join(map(str, default_pos))
-        else:
-            default_pos = DEFAULT_PHASE
-            pos_str = ' '.join(map(str, default_pos))
-        positions_input = st.text_area("位置数据 (mm，空格或逗号分隔):", value=pos_str, disabled=True)
-        positions = default_pos
-    else:
-        positions_input = st.text_area("请输入10个位置数据 (mm，空格或逗号分隔):", height=68)
-        submitted = st.form_submit_button("计算")
-
-if not use_default:
+    positions_input = st.text_area(
+        "位置数据 (mm，空格或逗号分隔):",
+        value=default_pos_str,
+        height=68
+    )
     submitted = st.form_submit_button("计算")
 
-# ---------- 处理计算结果 ----------
-if use_default or ('submitted' in locals() and submitted):
-    if not use_default:
-        try:
-            positions = [float(x.strip()) for x in positions_input.replace(',', ' ').split() if x.strip()]
-            if len(positions) != 10:
-                st.error(f"错误：需要10个位置数据，您输入了{len(positions)}个。")
-                st.stop()
-        except Exception as e:
-            st.error(f"输入错误: {e}")
+# ---------- 决定使用哪组数据 ----------
+if submitted:
+    # 用户点击了“计算”，解析文本框内容
+    try:
+        positions = [float(x.strip()) for x in positions_input.replace(',', ' ').split() if x.strip()]
+        if len(positions) != 10:
+            st.error(f"错误：需要10个位置数据，您输入了{len(positions)}个。")
             st.stop()
+    except Exception as e:
+        st.error(f"输入错误: {e}")
+        st.stop()
+else:
+    # 未点击按钮，直接使用默认数据（页面加载时自动显示示例结果）
+    positions = default_pos
 
-    if method == "驻波法（10个极大值位置）":
-        result = calc_standing_wave(f, T, positions)
-    else:
-        result = calc_phase_method(f, T, positions)
+# ---------- 执行计算 ----------
+if method == "驻波法（10个极大值位置）":
+    result = calc_standing_wave(f, T, positions)
+else:
+    result = calc_phase_method(f, T, positions)
 
-    # ---------- 显示结果 ----------
-    st.subheader("计算结果")
-    col1, col2 = st.columns(2)
+# ---------- 显示结果 ----------
+st.subheader("计算结果")
+col1, col2 = st.columns(2)
 
-    if method == "驻波法（10个极大值位置）":
-        with col1:
-            st.metric("平均间距", f"{result['avg_diff_mm']:.4f} mm")
-            st.metric("波长", f"{result['wavelength_mm']:.4f} mm")
-        with col2:
-            st.metric("实验声速", f"{result['v']:.2f} m/s")
-            st.metric("理论声速", f"{result['v0']:.2f} m/s")
-        st.write(f"**相邻间距 (mm):** {result['diffs_mm']}")
-    else:
-        with col1:
-            st.metric("平均波长", f"{result['avg_wavelength_mm']:.4f} mm")
-        with col2:
-            st.metric("实验声速", f"{result['v']:.2f} m/s")
-            st.metric("理论声速", f"{result['v0']:.2f} m/s")
-        st.write(f"**相邻同相点间距（波长） (mm):** {result['diffs_mm']}")
+if method == "驻波法（10个极大值位置）":
+    with col1:
+        st.metric("平均间距", f"{result['avg_diff_mm']:.4f} mm")
+        st.metric("波长", f"{result['wavelength_mm']:.4f} mm")
+    with col2:
+        st.metric("实验声速", f"{result['v']:.2f} m/s")
+        st.metric("理论声速", f"{result['v0']:.2f} m/s")
+    st.write(f"**相邻间距 (mm):** {result['diffs_mm']}")
+else:
+    with col1:
+        st.metric("平均波长", f"{result['avg_wavelength_mm']:.4f} mm")
+    with col2:
+        st.metric("实验声速", f"{result['v']:.2f} m/s")
+        st.metric("理论声速", f"{result['v0']:.2f} m/s")
+    st.write(f"**相邻同相点间距（波长） (mm):** {result['diffs_mm']}")
 
-    st.write(f"**相对误差:** {result['rel_error']:.2f} %")
-    st.write(f"**合成标准不确定度 u(v):** {result['u_v']:.1f} m/s")
+# 使用 st.metric 突出显示相对误差和不确定度（字号更大）
+st.metric("相对误差", f"{result['rel_error']:.2f} %")
+st.metric("合成标准不确定度 u(v)", f"{result['u_v']:.1f} m/s")
