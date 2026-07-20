@@ -154,7 +154,9 @@ if submitted:
     
     # 方法特定的中间量
     if method == "驻波法（10个极大值位置）":
-        st.write("**相邻间距 (半波长) (mm):**", result['diffs_mm'])
+        # ----- 修改点：相邻间距强制保留两位小数 -----
+        diffs_formatted = [f"{d:.2f}" for d in result['diffs_mm']]
+        st.write("**相邻间距 (半波长) (mm):**", diffs_formatted)
         st.write(f"**平均间距:** {result['avg_diff_mm']:.4f} mm = {result['avg_diff_m']:.6f} m")
         st.write(f"**波长:** {result['wavelength_mm']:.4f} mm = {result['wavelength_m']:.6f} m")
         # 显示公式与变量代入
@@ -166,7 +168,9 @@ if submitted:
         st.latex(f"u(v) = f \\cdot u(\\lambda) = {f:.2f} \\times {result['u_v']/f:.6f} = {result['u_v']:.1f} \\; \\text{{m/s}}")
         st.latex(f"E = \\frac{{|{result['v']:.2f} - {result['v0']:.2f}|}}{{{result['v0']:.2f}}} \\times 100\\% = {result['rel_error']:.2f}\\%")
     else:  # 相位比较法
-        st.write("**相邻同相点间距（波长） (mm):**", result['diffs_mm'])
+        # ----- 修改点：相邻同相点间距强制保留两位小数 -----
+        diffs_formatted = [f"{d:.2f}" for d in result['diffs_mm']]
+        st.write("**相邻同相点间距（波长） (mm):**", diffs_formatted)
         st.write(f"**平均波长:** {result['avg_wavelength_mm']:.4f} mm = {result['avg_wavelength_m']:.6f} m")
         st.markdown("---")
         st.markdown("**📝 计算公式与代入值**")
